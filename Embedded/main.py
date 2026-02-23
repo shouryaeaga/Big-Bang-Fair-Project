@@ -1,4 +1,4 @@
-from machine import Pin, I2C
+from machine import Pin, I2C, ADC
 import time
 # Initialize I2C
 i2c = I2C(scl=Pin(9), sda=Pin(8), freq=400000)
@@ -43,18 +43,30 @@ def samples_to_read(i2c: I2C):
         return write_ptr - read_ptr
     return (32 - read_ptr) + write_ptr
 
+gsr_adc = ADC(Pin(27))
+
+
 while True:
     try:
         # Read 6 bytes (3 samples) from FIFO
         num_samples = samples_to_read(i2c)
         if num_samples > 0:
             for i in range(num_samples):
+                # 1st byte will be the first byte of the ir value, ir value has 3 bytes
+                # 4th 5th and 6th bytes will be the red value.
                 data = i2c.readfrom_mem(0x57, 0x07, 6)
+                # 01110000 00000000 00000000
+                #          10101010 00000000
+                #                   01010101
                 ir = (data[0] << 16) | (data[1] << 8) | data[2] # 24 bit value for IR and RED
                 red = (data[3] << 16) | (data[4] << 8) | data[5]
                 t = time.ticks_ms()
+                gsr_value = gsr_adc.read_u16()
+                # gsr_value is a measure of resistance
+                # so gsr_value will decrease as skin conductance increases
                 print(f">IR:{ir}:{t}")
                 print(f">RED:{red}:{t}")
+                print(f">GSR:{gsr_value}:{t}")
         
     except Exception as e:
         print("Error reading from I2C device:", e)

@@ -4,13 +4,14 @@ from scipy.signal import find_peaks
 
 import matplotlib.pyplot as plt
 
-testing = "calm"
+testing = "calm_eda+ppg_test"
 
 port = "/dev/ttyACM0"
 baud = 115200
 ser = serial.Serial(port, baudrate=baud)
 red = []
 ir = []
+gsr = []
 last_five_seconds_red = []
 last_time = 0
 current_time = 0
@@ -21,6 +22,9 @@ try:
         line = line.decode().strip()
         line = line[1:]
         line = line.split(":")
+        # line[0] = "IR" - data
+        # line[1] = "1235423" - value
+        # line[2] = "1502" - time
         if len(line) != 3:
             continue
         current_time = int(line[2])
@@ -30,6 +34,9 @@ try:
                 last_five_seconds_red.append((int(line[1]), int(line[2])))
             case "IR":
                 ir.append((int(line[1]), int(line[2])))
+            case "GSR":
+                gsr.append(int(line[1]))
+                # print("GSR:", gsr[-1])
         if (current_time - last_time) > window_slide_time:
             if last_time == 0:
                 last_time = current_time
@@ -47,8 +54,15 @@ try:
             red_arr = red_arr - np.mean(red_arr)
             red_arr = np.convolve(red_arr, np.ones(8)/8, mode='same')
             sample_rate = len(red_arr) / ( (last_five_seconds_red[-1][1] - last_five_seconds_red[0][1]) / 1000 )
-            min_distance = int(0.25 * sample_rate)
+            min_distance = int(0.25 * sample_rate) # minimum distance between peaks has to be at least 0.25 * sample rate
             peaks, _ = find_peaks(red_arr, distance=min_distance, prominence = np.std(red_arr))
+
+            # red_arr = [1,2,4,5,2,3,3]
+            # last_fiv..._red = [(1,1230), (2, 4234)...]
+            # peaks = [0,2,4]
+
+            #peak_times = [12,234, 534, 645]
+            #np.diff() = [234-12, 534-234, 645-534]
             print(len(peaks))
             if len(peaks) > 1:
                 peak_times = np.array([last_five_seconds_red[i][1] for i in peaks])
@@ -68,9 +82,12 @@ except KeyboardInterrupt:
     last_sliding_window_time = red[-1][1] // sliding_window_time * sliding_window_time
     while time <= last_sliding_window_time:
         samples_to_take_red = []
-        for sample in red:
+        samples_to_take_gsr = []
+        for index, sample in enumerate(red):
             if sample[1] >= time and sample[1] < time + sliding_window_time:
                 samples_to_take_red.append(sample)
+                samples_to_take_gsr.append(gsr[index])
+
         sample_rate = len(samples_to_take_red) / ((samples_to_take_red[-1][1] - samples_to_take_red[0][1]) / 1000)
         red_values_sample = [x[0] for x in samples_to_take_red]
         red_values_sample = np.array(red_values_sample)
@@ -87,6 +104,9 @@ except KeyboardInterrupt:
         if bpm < 45:
             time += time_step
             continue
+
+        samples_to_take_gsr = np.array(samples_to_take_gsr)
+        samples_to_take_gsr = np.convolve(samples_to_take_gsr, np.ones(8) / 8, mode='same')
         # Store this sample in a txt file. First line is the red_values_sample with the mean taken away.
         # The 2nd line is the times
         # the 3rd line is the index of the peaks
@@ -109,16 +129,21 @@ except KeyboardInterrupt:
         line = line[:-1]
         f.write(line)
         f.write("\n")
-
+        line = ""
+        for sample in samples_to_take_gsr:
+            line += str(sample) + ","
+        line = line[:-1]
+        f.write(line)
+        f.write("\n")
 
         if len(peaks) > 1:
             print("PEAKS", len(peaks))
             print("BPM", bpm)
-
         time += time_step
 
     plt.figure()
     sample_to_graph = np.array(red_values_sample)
     plt.plot(sample_to_graph)
     plt.scatter(peaks, red_values_sample[peaks], color='red')
+    # plt.plot(samples_to_take_gsr)
     plt.show()
