@@ -4,7 +4,7 @@ from scipy.signal import find_peaks
 
 import matplotlib.pyplot as plt
 
-testing = "calm_eda+ppg_test"
+testing = "stress_eda+ppg_test_recording_2"
 
 port = "/dev/ttyACM0"
 baud = 115200
